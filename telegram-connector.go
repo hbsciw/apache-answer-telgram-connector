@@ -54,7 +54,7 @@ func (g *TelegramConnector) Info() plugin.Info {
 	return plugin.Info{
 		Name:        plugin.MakeTranslator("telegram connector"),
 		SlugName:    "telegram_connector",
-		Description: plugin.MakeTranslator(i18n.InfoDescription),
+		Description: plugin.MakeTranslator("telegram connector"),
 		Author:      "answerdev",
 		Version:     "1.2.32",
 		Link:        "https://github.com/apache/incubator-answer-plugins/tree/main/telegram-basic",
@@ -67,9 +67,11 @@ func (g *TelegramConnector) ConnectorLogoSVG() string {
 
 func (g *TelegramConnector) ConnectorName() plugin.Translator {
 	if len(g.Config.Name) > 0 {
+		g.Config.Name = "telegram connector"
 		return plugin.MakeTranslator(g.Config.Name)
 	}
-	return plugin.MakeTranslator(i18n.ConnectorName)
+	return plugin.MakeTranslator("telegram connector")
+	//return plugin.MakeTranslator(i18n.ConnectorName)
 }
 
 func (g *TelegramConnector) ConnectorSlugName() string {

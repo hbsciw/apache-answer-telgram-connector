@@ -52,11 +52,11 @@ func init() {
 
 func (g *TelegramConnector) Info() plugin.Info {
 	return plugin.Info{
-		Name:        plugin.MakeTranslator(i18n.InfoName),
+		Name:        plugin.MakeTranslator("telegram connector"),
 		SlugName:    "telegram_connector",
 		Description: plugin.MakeTranslator(i18n.InfoDescription),
 		Author:      "answerdev",
-		Version:     "1.2.5",
+		Version:     "1.2.32",
 		Link:        "https://github.com/apache/incubator-answer-plugins/tree/main/telegram-basic",
 	}
 }

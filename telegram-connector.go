@@ -9,11 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/apache/incubator-answer-plugins/connector-basic/i18n"
 	"github.com/apache/incubator-answer/pkg/checker"
 	"github.com/apache/incubator-answer/plugin"
-	log "github.com/dsoprea/go-logging"
-	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
 )
 
@@ -23,24 +20,8 @@ type TelegramConnector struct {
 }
 
 type TelegramConnectorConfig struct {
-	Name string `json:"name"`
-
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	AuthorizeUrl string `json:"authorize_url"`
-	TokenUrl     string `json:"token_url"`
-	UserJsonUrl  string `json:"user_json_url"`
-
-	UserIDJsonPath          string `json:"user_id_json_path"`
-	UserDisplayNameJsonPath string `json:"user_display_name_json_path"`
-	UserUsernameJsonPath    string `json:"user_username_json_path"`
-	UserEmailJsonPath       string `json:"user_email_json_path"`
-	UserAvatarJsonPath      string `json:"user_avatar_json_path"`
-
-	CheckEmailVerified    bool   `json:"check_email_verified"`
-	EmailVerifiedJsonPath string `json:"email_verified_json_path"`
-
-	Scope   string `json:"scope"`
+	Name    string `json:"name"`
+	BotName string `json:"client_id"`
 	LogoSVG string `json:"logo_svg"`
 }
 
@@ -52,12 +33,12 @@ func init() {
 
 func (g *TelegramConnector) Info() plugin.Info {
 	return plugin.Info{
-		Name:        plugin.MakeTranslator("telegram connector"),
+		Name:        plugin.MakeTranslator("Telegram"),
 		SlugName:    "telegram_connector",
-		Description: plugin.MakeTranslator("telegram connector"),
+		Description: plugin.MakeTranslator("Telegram"),
 		Author:      "answerdev",
-		Version:     "1.2.32",
-		Link:        "https://github.com/apache/incubator-answer-plugins/tree/main/telegram-basic",
+		Version:     "0.0.8",
+		Link:        "https://github.com/hbsciw/apache-answer-telgram-connector",
 	}
 }
 
@@ -66,11 +47,11 @@ func (g *TelegramConnector) ConnectorLogoSVG() string {
 }
 
 func (g *TelegramConnector) ConnectorName() plugin.Translator {
-	if len(g.Config.Name) > 0 {
-		g.Config.Name = "telegram connector"
-		return plugin.MakeTranslator(g.Config.Name)
-	}
-	return plugin.MakeTranslator("telegram connector")
+	// if len(g.Config.Name) > 0 {
+	// 	g.Config.Name = "telegram connector"
+	// 	return plugin.MakeTranslator(g.Config.Name)
+	// }
+	return plugin.MakeTranslator(g.Config.Name)
 	//return plugin.MakeTranslator(i18n.ConnectorName)
 }
 
@@ -80,14 +61,14 @@ func (g *TelegramConnector) ConnectorSlugName() string {
 
 func (g *TelegramConnector) ConnectorSender(ctx *plugin.GinContext, receiverURL string) (redirectURL string) {
 	oauth2Config := &oauth2.Config{
-		ClientID:     g.Config.ClientID,
-		ClientSecret: g.Config.ClientSecret,
+		ClientID:     "", //g.Config.ClientID,
+		ClientSecret: "", //g.Config.ClientSecret,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  g.Config.AuthorizeUrl,
-			TokenURL: g.Config.TokenUrl,
+			AuthURL:  "", //g.Config.AuthorizeUrl,
+			TokenURL: "", //g.Config.TokenUrl,
 		},
 		RedirectURL: receiverURL,
-		Scopes:      strings.Split(g.Config.Scope, ","),
+		//Scopes:      strings.Split(g.Config.Scope, ","),
 	}
 	return oauth2Config.AuthCodeURL("state")
 }
@@ -96,11 +77,11 @@ func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverUR
 	code := ctx.Query("code")
 	// Exchange code for token
 	oauth2Config := &oauth2.Config{
-		ClientID:     g.Config.ClientID,
-		ClientSecret: g.Config.ClientSecret,
+		ClientID:     "", //g.Config.ClientID,
+		ClientSecret: "", //g.Config.ClientSecret,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:   g.Config.AuthorizeUrl,
-			TokenURL:  g.Config.TokenUrl,
+			AuthURL:   "", //g.Config.AuthorizeUrl,
+			TokenURL:  "", //g.Config.TokenUrl,
 			AuthStyle: oauth2.AuthStyleAutoDetect,
 		},
 		RedirectURL: receiverURL,
@@ -116,7 +97,7 @@ func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverUR
 	))
 	client.Timeout = 15 * time.Second
 
-	response, err := client.Get(g.Config.UserJsonUrl)
+	response, err := client.Get("" /*g.Config.UserJsonUrl*/)
 	if err != nil {
 		return userInfo, fmt.Errorf("failed getting user info: %s", err.Error())
 	}
@@ -127,7 +108,7 @@ func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverUR
 		MetaInfo: string(data),
 	}
 
-	if len(g.Config.UserIDJsonPath) > 0 {
+	/*if len(g.Config.UserIDJsonPath) > 0 {
 		userInfo.ExternalID = gjson.GetBytes(data, g.Config.UserIDJsonPath).String()
 	}
 	if len(userInfo.ExternalID) == 0 {
@@ -151,7 +132,7 @@ func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverUR
 	}
 	if len(g.Config.UserAvatarJsonPath) > 0 {
 		userInfo.Avatar = gjson.GetBytes(data, g.Config.UserAvatarJsonPath).String()
-	}
+	}*/
 
 	userInfo = g.formatUserInfo(userInfo)
 	return userInfo, nil
@@ -176,8 +157,8 @@ func (g *TelegramConnector) formatUserInfo(userInfo plugin.ExternalLoginUserInfo
 func (g *TelegramConnector) ConfigFields() []plugin.ConfigField {
 	fields := make([]plugin.ConfigField, 0)
 	fields = append(fields, createTextInput("name",
-		i18n.ConfigNameTitle, i18n.ConfigNameDescription, g.Config.Name, true))
-	fields = append(fields, createTextInput("client_id",
+		"Name", "", g.Config.Name, true))
+	/*fields = append(fields, createTextInput("client_id",
 		i18n.ConfigClientIDTitle, i18n.ConfigClientIDDescription, g.Config.ClientID, true))
 	fields = append(fields, createTextInput("client_secret",
 		i18n.ConfigClientSecretTitle, i18n.ConfigClientSecretDescription, g.Config.ClientSecret, true))
@@ -196,22 +177,22 @@ func (g *TelegramConnector) ConfigFields() []plugin.ConfigField {
 	fields = append(fields, createTextInput("user_email_json_path",
 		i18n.ConfigUserEmailJsonPathTitle, i18n.ConfigUserEmailJsonPathDescription, g.Config.UserEmailJsonPath, false))
 	fields = append(fields, createTextInput("user_avatar_json_path",
-		i18n.ConfigUserAvatarJsonPathTitle, i18n.ConfigUserAvatarJsonPathDescription, g.Config.UserAvatarJsonPath, false))
-	fields = append(fields, plugin.ConfigField{
-		Name:  "check_email_verified",
-		Type:  plugin.ConfigTypeSwitch,
-		Title: plugin.MakeTranslator(i18n.ConfigCheckEmailVerifiedTitle),
-		Value: g.Config.CheckEmailVerified,
-		UIOptions: plugin.ConfigFieldUIOptions{
-			Label: plugin.MakeTranslator(i18n.ConfigCheckEmailVerifiedLabel),
-		},
-	})
-	fields = append(fields, createTextInput("email_verified_json_path",
-		i18n.ConfigEmailVerifiedJsonPathTitle, i18n.ConfigEmailVerifiedJsonPathDescription, g.Config.EmailVerifiedJsonPath, false))
-	fields = append(fields, createTextInput("scope",
-		i18n.ConfigScopeTitle, i18n.ConfigScopeDescription, g.Config.Scope, false))
+		i18n.ConfigUserAvatarJsonPathTitle, i18n.ConfigUserAvatarJsonPathDescription, g.Config.UserAvatarJsonPath, false))*/
+	// fields = append(fields, plugin.ConfigField{
+	// 	Name:  "check_email_verified",
+	// 	Type:  plugin.ConfigTypeSwitch,
+	// 	Title: plugin.MakeTranslator(i18n.ConfigCheckEmailVerifiedTitle),
+	// 	Value: g.Config.CheckEmailVerified,
+	// 	UIOptions: plugin.ConfigFieldUIOptions{
+	// 		Label: plugin.MakeTranslator(i18n.ConfigCheckEmailVerifiedLabel),
+	// 	},
+	// })
+	// fields = append(fields, createTextInput("email_verified_json_path",
+	// 	i18n.ConfigEmailVerifiedJsonPathTitle, i18n.ConfigEmailVerifiedJsonPathDescription, g.Config.EmailVerifiedJsonPath, false))
+	// fields = append(fields, createTextInput("scope",
+	// 	i18n.ConfigScopeTitle, i18n.ConfigScopeDescription, g.Config.Scope, false))
 	fields = append(fields, createTextInput("logo_svg",
-		i18n.ConfigLogoSVGTitle, i18n.ConfigLogoSVGDescription, g.Config.LogoSVG, false))
+		"Logo SVG", "", g.Config.LogoSVG, false))
 
 	return fields
 }

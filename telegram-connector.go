@@ -22,10 +22,11 @@ type TelegramConnector struct {
 }
 
 type TelegramConnectorConfig struct {
-	Name    string `json:"name"`
-	BotID   string `json:"bot_id"`
-	Domain  string `json:domain`
-	LogoSVG string `json:"logo_svg"`
+	Name     string `json:"name"`
+	BotID    string `json:"bot_id"`
+	BotToken string `json:bot_token`
+	Domain   string `json:domain`
+	LogoSVG  string `json:"logo_svg"`
 }
 
 func init() {
@@ -40,7 +41,7 @@ func (g *TelegramConnector) Info() plugin.Info {
 		SlugName:    "telegram_connector",
 		Description: plugin.MakeTranslator("Telegram"),
 		Author:      "answerdev",
-		Version:     "0.1.1",
+		Version:     "0.1.2",
 		Link:        "https://github.com/hbsciw/apache-answer-telgram-connector",
 	}
 }
@@ -88,7 +89,7 @@ func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverUR
 		return userInfo, err
 	}
 
-	if !checkTelegramAuthorization(data) {
+	if !checkTelegramAuthorization(data, g.Config.BotToken) {
 		return userInfo, errors.New("invalid telegram signature")
 	}
 
@@ -109,6 +110,7 @@ func (g *TelegramConnector) ConfigFields() []plugin.ConfigField {
 	fields = append(fields, createTextInput("name",
 		"Name", "", g.Config.Name, true))
 	fields = append(fields, createTextInput("bot_id", "BotID", "", g.Config.BotID, true))
+	fields = append(fields, createTextInput("bot_token", "BotToken", "", g.Config.BotToken, true))
 	fields = append(fields, createTextInput("domain", "Domain", "", g.Config.Domain, true))
 	fields = append(fields, createTextInput("logo_svg",
 		"Logo SVG", "", g.Config.LogoSVG, false))
@@ -160,9 +162,8 @@ func mapToString(m map[string]string) string {
 }
 
 // id, first_name, last_name, username, photo_url, auth_date and hash
-func checkTelegramAuthorization(params map[string]string) bool {
+func checkTelegramAuthorization(params map[string]string, token string) bool {
 
-	token := "7159845562:AAFt6UmipxbVdzPJxEiGoWJLGl6BuinumOQ"
 	keyHash := sha256.New()
 	keyHash.Write([]byte(token))
 	secretkey := keyHash.Sum(nil)

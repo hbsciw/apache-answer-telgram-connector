@@ -40,7 +40,7 @@ func (g *TelegramConnector) Info() plugin.Info {
 		SlugName:    "telegram_connector",
 		Description: plugin.MakeTranslator("Telegram"),
 		Author:      "answerdev",
-		Version:     "0.1.0",
+		Version:     "0.1.1",
 		Link:        "https://github.com/hbsciw/apache-answer-telgram-connector",
 	}
 }
@@ -97,7 +97,7 @@ func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverUR
 		ExternalID:  "telegram-auth|" + data["id"],
 		DisplayName: data["first_name"] + " " + data["last_name"],
 		Username:    strings.ToLower(data["username"]),
-		Avatar:      data["photo_url"],
+		Avatar:      changeAvatarURL(data["photo_url"]),
 		Email:       "telegram-auth|" + data["id"] + "@telegram.local",
 	}
 
@@ -138,6 +138,14 @@ func (g *TelegramConnector) ConfigReceiver(config []byte) error {
 }
 
 //helper functions
+
+func changeAvatarURL(photoURL string) string {
+	if photoURL == "" {
+		return "https://balenj.com/uploads/avatar/59pH7TkF2mL.png?s=96"
+	}
+
+	return strings.Replace(photoURL, "https://t.me/", "https://balenj.com/timage/", 1)
+}
 
 func mapToString(m map[string]string) string {
 	var sb strings.Builder

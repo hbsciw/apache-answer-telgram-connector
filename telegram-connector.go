@@ -1,17 +1,19 @@
 package telegram
 
 import (
-	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"github.com/apache/incubator-answer/pkg/checker"
 	"github.com/apache/incubator-answer/plugin"
-	"golang.org/x/oauth2"
 )
 
 type TelegramConnector struct {
@@ -21,7 +23,8 @@ type TelegramConnector struct {
 
 type TelegramConnectorConfig struct {
 	Name    string `json:"name"`
-	BotName string `json:"client_id"`
+	BotID   string `json:"bot_id"`
+	Domain  string `json:domain`
 	LogoSVG string `json:"logo_svg"`
 }
 
@@ -37,7 +40,7 @@ func (g *TelegramConnector) Info() plugin.Info {
 		SlugName:    "telegram_connector",
 		Description: plugin.MakeTranslator("Telegram"),
 		Author:      "answerdev",
-		Version:     "0.0.8",
+		Version:     "0.1.0",
 		Link:        "https://github.com/hbsciw/apache-answer-telgram-connector",
 	}
 }
@@ -56,141 +59,57 @@ func (g *TelegramConnector) ConnectorName() plugin.Translator {
 }
 
 func (g *TelegramConnector) ConnectorSlugName() string {
-	return "basic"
+	return "telegram"
 }
 
 func (g *TelegramConnector) ConnectorSender(ctx *plugin.GinContext, receiverURL string) (redirectURL string) {
-	oauth2Config := &oauth2.Config{
-		ClientID:     "", //g.Config.ClientID,
-		ClientSecret: "", //g.Config.ClientSecret,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "", //g.Config.AuthorizeUrl,
-			TokenURL: "", //g.Config.TokenUrl,
-		},
-		RedirectURL: receiverURL,
-		//Scopes:      strings.Split(g.Config.Scope, ","),
-	}
-	return oauth2Config.AuthCodeURL("state")
+
+	return "https://oauth.telegram.org/auth?bot_id=" + g.Config.BotID + "&origin=" + g.Config.Domain + "&embed=1&request_access=write&return_to=https://balenj.com/balenj/telegramRedirect"
+
 }
 
 func (g *TelegramConnector) ConnectorReceiver(ctx *plugin.GinContext, receiverURL string) (userInfo plugin.ExternalLoginUserInfo, err error) {
-	code := ctx.Query("code")
-	// Exchange code for token
-	oauth2Config := &oauth2.Config{
-		ClientID:     "", //g.Config.ClientID,
-		ClientSecret: "", //g.Config.ClientSecret,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:   "", //g.Config.AuthorizeUrl,
-			TokenURL:  "", //g.Config.TokenUrl,
-			AuthStyle: oauth2.AuthStyleAutoDetect,
-		},
-		RedirectURL: receiverURL,
-	}
-	token, err := oauth2Config.Exchange(context.Background(), code)
-	if err != nil {
-		return userInfo, fmt.Errorf("code exchange failed: %s", err.Error())
+
+	telegramData, res := ctx.GetQuery("tgAuthResult")
+	paddedData := telegramData + strings.Repeat("=", 4-len(telegramData)%4)
+
+	if !res {
+		return userInfo, errors.New("invalid telegram authentication data")
 	}
 
-	// Exchange token for user info
-	client := oauth2.NewClient(context.Background(), oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token.AccessToken},
-	))
-	client.Timeout = 15 * time.Second
-
-	response, err := client.Get("" /*g.Config.UserJsonUrl*/)
+	// Decode the base64 string
+	decodedBytes, err := base64.StdEncoding.DecodeString(paddedData)
 	if err != nil {
-		return userInfo, fmt.Errorf("failed getting user info: %s", err.Error())
+		return userInfo, err
 	}
-	defer response.Body.Close()
-	data, _ := io.ReadAll(response.Body)
+
+	data, err := unmarshalJSON(decodedBytes)
+	if err != nil {
+		return userInfo, err
+	}
+
+	if !checkTelegramAuthorization(data) {
+		return userInfo, errors.New("invalid telegram signature")
+	}
 
 	userInfo = plugin.ExternalLoginUserInfo{
-		MetaInfo: string(data),
+		MetaInfo:    mapToString((data)),
+		ExternalID:  "telegram-auth|" + data["id"],
+		DisplayName: data["first_name"] + " " + data["last_name"],
+		Username:    strings.ToLower(data["username"]),
+		Avatar:      data["photo_url"],
+		Email:       "telegram-auth|" + data["id"] + "@telegram.local",
 	}
 
-	/*if len(g.Config.UserIDJsonPath) > 0 {
-		userInfo.ExternalID = gjson.GetBytes(data, g.Config.UserIDJsonPath).String()
-	}
-	if len(userInfo.ExternalID) == 0 {
-		log.Errorf("fail to get user id from json path: %s", g.Config.UserIDJsonPath)
-		return userInfo, nil
-	}
-	if len(g.Config.UserDisplayNameJsonPath) > 0 {
-		userInfo.DisplayName = gjson.GetBytes(data, g.Config.UserDisplayNameJsonPath).String()
-	}
-	if len(g.Config.UserUsernameJsonPath) > 0 {
-		userInfo.Username = gjson.GetBytes(data, g.Config.UserUsernameJsonPath).String()
-	}
-	if len(g.Config.UserEmailJsonPath) > 0 {
-		userInfo.Email = gjson.GetBytes(data, g.Config.UserEmailJsonPath).String()
-	}
-	if g.Config.CheckEmailVerified && len(g.Config.EmailVerifiedJsonPath) > 0 {
-		emailVerified := gjson.GetBytes(data, g.Config.EmailVerifiedJsonPath).Bool()
-		if !emailVerified {
-			userInfo.Email = ""
-		}
-	}
-	if len(g.Config.UserAvatarJsonPath) > 0 {
-		userInfo.Avatar = gjson.GetBytes(data, g.Config.UserAvatarJsonPath).String()
-	}*/
-
-	userInfo = g.formatUserInfo(userInfo)
 	return userInfo, nil
-}
-
-func (g *TelegramConnector) formatUserInfo(userInfo plugin.ExternalLoginUserInfo) (
-	userInfoFormatted plugin.ExternalLoginUserInfo) {
-	userInfoFormatted = userInfo
-	if checker.IsInvalidUsername(userInfoFormatted.Username) {
-		//userInfoFormatted.Username = replaceUsernameReg.ReplaceAllString(userInfoFormatted.Username, "_")
-	}
-
-	usernameLength := utf8.RuneCountInString(userInfoFormatted.Username)
-	if usernameLength < 4 {
-		userInfoFormatted.Username = userInfoFormatted.Username + strings.Repeat("_", 4-usernameLength)
-	} else if usernameLength > 30 {
-		userInfoFormatted.Username = string([]rune(userInfoFormatted.Username)[:30])
-	}
-	return userInfoFormatted
 }
 
 func (g *TelegramConnector) ConfigFields() []plugin.ConfigField {
 	fields := make([]plugin.ConfigField, 0)
 	fields = append(fields, createTextInput("name",
 		"Name", "", g.Config.Name, true))
-	/*fields = append(fields, createTextInput("client_id",
-		i18n.ConfigClientIDTitle, i18n.ConfigClientIDDescription, g.Config.ClientID, true))
-	fields = append(fields, createTextInput("client_secret",
-		i18n.ConfigClientSecretTitle, i18n.ConfigClientSecretDescription, g.Config.ClientSecret, true))
-	fields = append(fields, createTextInput("authorize_url",
-		i18n.ConfigAuthorizeUrlTitle, i18n.ConfigAuthorizeUrlDescription, g.Config.AuthorizeUrl, true))
-	fields = append(fields, createTextInput("token_url",
-		i18n.ConfigTokenUrlTitle, i18n.ConfigTokenUrlDescription, g.Config.TokenUrl, true))
-	fields = append(fields, createTextInput("user_json_url",
-		i18n.ConfigUserJsonUrlTitle, i18n.ConfigUserJsonUrlDescription, g.Config.UserJsonUrl, true))
-	fields = append(fields, createTextInput("user_id_json_path",
-		i18n.ConfigUserIDJsonPathTitle, i18n.ConfigUserIDJsonPathDescription, g.Config.UserIDJsonPath, true))
-	fields = append(fields, createTextInput("user_display_name_json_path",
-		i18n.ConfigUserDisplayNameJsonPathTitle, i18n.ConfigUserDisplayNameJsonPathDescription, g.Config.UserDisplayNameJsonPath, false))
-	fields = append(fields, createTextInput("user_username_json_path",
-		i18n.ConfigUserUsernameJsonPathTitle, i18n.ConfigUserUsernameJsonPathDescription, g.Config.UserUsernameJsonPath, false))
-	fields = append(fields, createTextInput("user_email_json_path",
-		i18n.ConfigUserEmailJsonPathTitle, i18n.ConfigUserEmailJsonPathDescription, g.Config.UserEmailJsonPath, false))
-	fields = append(fields, createTextInput("user_avatar_json_path",
-		i18n.ConfigUserAvatarJsonPathTitle, i18n.ConfigUserAvatarJsonPathDescription, g.Config.UserAvatarJsonPath, false))*/
-	// fields = append(fields, plugin.ConfigField{
-	// 	Name:  "check_email_verified",
-	// 	Type:  plugin.ConfigTypeSwitch,
-	// 	Title: plugin.MakeTranslator(i18n.ConfigCheckEmailVerifiedTitle),
-	// 	Value: g.Config.CheckEmailVerified,
-	// 	UIOptions: plugin.ConfigFieldUIOptions{
-	// 		Label: plugin.MakeTranslator(i18n.ConfigCheckEmailVerifiedLabel),
-	// 	},
-	// })
-	// fields = append(fields, createTextInput("email_verified_json_path",
-	// 	i18n.ConfigEmailVerifiedJsonPathTitle, i18n.ConfigEmailVerifiedJsonPathDescription, g.Config.EmailVerifiedJsonPath, false))
-	// fields = append(fields, createTextInput("scope",
-	// 	i18n.ConfigScopeTitle, i18n.ConfigScopeDescription, g.Config.Scope, false))
+	fields = append(fields, createTextInput("bot_id", "BotID", "", g.Config.BotID, true))
+	fields = append(fields, createTextInput("domain", "Domain", "", g.Config.Domain, true))
 	fields = append(fields, createTextInput("logo_svg",
 		"Logo SVG", "", g.Config.LogoSVG, false))
 
@@ -216,4 +135,99 @@ func (g *TelegramConnector) ConfigReceiver(config []byte) error {
 	_ = json.Unmarshal(config, c)
 	g.Config = c
 	return nil
+}
+
+//helper functions
+
+func mapToString(m map[string]string) string {
+	var sb strings.Builder
+
+	sb.WriteString("{")
+	for key, value := range m {
+		sb.WriteString(fmt.Sprintf(`"%s":"%s", `, key, value))
+	}
+	sb.WriteString("}")
+
+	return sb.String()
+}
+
+// id, first_name, last_name, username, photo_url, auth_date and hash
+func checkTelegramAuthorization(params map[string]string) bool {
+
+	token := "7159845562:AAFt6UmipxbVdzPJxEiGoWJLGl6BuinumOQ"
+	keyHash := sha256.New()
+	keyHash.Write([]byte(token))
+	secretkey := keyHash.Sum(nil)
+
+	var checkparams []string
+	for k, v := range params {
+		if k != "hash" {
+			checkparams = append(checkparams, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+	sort.Strings(checkparams)
+	checkString := strings.Join(checkparams, "\n")
+	hash := hmac.New(sha256.New, secretkey)
+	hash.Write([]byte(checkString))
+	hashstr := hex.EncodeToString(hash.Sum(nil))
+
+	authDateUnix := params["auth_date"] // Assuming this is your auth_date
+
+	if !isAuthDateWithinLast5Minutes(authDateUnix) {
+		return false
+	}
+	if hashstr == params["hash"] {
+		return true
+	}
+	return false
+}
+
+func parseIntToString(value interface{}) (string, error) {
+	switch v := value.(type) {
+	case float64:
+		intValue := int(v)
+		return strconv.Itoa(intValue), nil
+	case int:
+		return strconv.Itoa(v), nil
+	case json.Number:
+		intValue, err := v.Int64()
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatInt(intValue, 10), nil
+	case string:
+		return v, nil // Handle string values by returning them as is
+	default:
+		return "", fmt.Errorf("unsupported type: %T", value)
+	}
+}
+
+func unmarshalJSON(data []byte) (map[string]string, error) {
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal(data, &rawMap); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]string)
+	for key, value := range rawMap {
+		stringValue, err := parseIntToString(value)
+		if err != nil {
+			return nil, err
+		}
+		result[key] = stringValue
+	}
+	return result, nil
+}
+
+func isAuthDateWithinLast5Minutes(authDateUnix string) bool {
+	authDateUnitInt, err := strconv.Atoi(authDateUnix)
+	if err != nil {
+		return false
+	}
+	authDate := time.Unix(int64(authDateUnitInt), 0)
+	currentTime := time.Now()
+
+	difference := currentTime.Sub(authDate)
+	// Check if the difference is less than or equal to 5 minutes
+	return difference <= 5*time.Minute
 }

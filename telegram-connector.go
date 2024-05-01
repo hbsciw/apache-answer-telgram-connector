@@ -24,8 +24,8 @@ type TelegramConnector struct {
 type TelegramConnectorConfig struct {
 	Name     string `json:"name"`
 	BotID    string `json:"bot_id"`
-	BotToken string `json:bot_token`
-	Domain   string `json:domain`
+	BotToken string `json:"bot_token"`
+	Domain   string `json:"domain"`
 	LogoSVG  string `json:"logo_svg"`
 }
 
@@ -41,7 +41,7 @@ func (g *TelegramConnector) Info() plugin.Info {
 		SlugName:    "telegram_connector",
 		Description: plugin.MakeTranslator("Telegram"),
 		Author:      "answerdev",
-		Version:     "0.1.2",
+		Version:     "0.1.3",
 		Link:        "https://github.com/hbsciw/apache-answer-telgram-connector",
 	}
 }
